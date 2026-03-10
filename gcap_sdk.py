@@ -74,7 +74,8 @@ class Gcap:
 
     def _make_request(self, method, endpoint, **kwargs):
         """
-        Faz requisições HTTP para os endpoints da API
+        Faz requisições HTTP para os endpoints da API.
+        Para requisições GET em endpoints de listagem, busca todas as páginas automaticamente.
         """
         url = f"{self.base_url}{endpoint}"
         
@@ -88,13 +89,70 @@ class Gcap:
         kwargs.setdefault('headers', {}).update(self.headers)
         
         try:
-            response = requests.request(method, url, **kwargs)
-            return {
-                'success': True,
-                'status_code': response.status_code,
-                'data': response.json() if response.content else None,
-                'response': response
-            }
+            # Para GET em endpoints de listagem, buscar todas as páginas
+            if method == 'GET' and '/functions/v1/' in endpoint:
+                all_data = []
+                page = params.get('page', 0)
+                page_size = params.get('page_size', 100)
+                
+                while True:
+                    params['page'] = page
+                    params['page_size'] = page_size
+                    kwargs['params'] = params
+                    
+                    response = requests.request(method, url, **kwargs)
+                    
+                    if response.status_code != 200:
+                        return {
+                            'success': False,
+                            'status_code': response.status_code,
+                            'error': f'HTTP {response.status_code}',
+                            'response': response.text
+                        }
+                    
+                    result = response.json() if response.content else {}
+                    
+                    # Extrair dados da resposta
+                    # A API pode retornar {'data': [...]} ou {'data': {'data': [...], 'total': N}}
+                    response_data = result.get('data', [])
+                    
+                    # Se response_data é um dict com chave 'data', extrair a lista
+                    if isinstance(response_data, dict) and 'data' in response_data:
+                        page_items = response_data.get('data', [])
+                    elif isinstance(response_data, list):
+                        page_items = response_data
+                    else:
+                        page_items = []
+                    
+                    # Adicionar itens à lista total
+                    if isinstance(page_items, list):
+                        all_data.extend(page_items)
+                    else:
+                        # Se não é lista, é fim dos dados
+                        break
+                    
+                    # Verificar se há mais páginas
+                    # Se recebeu menos itens que o page_size, é a última página
+                    if len(page_items) < page_size:
+                        break
+                    
+                    page += 1
+                
+                return {
+                    'success': True,
+                    'status_code': 200,
+                    'data': {'data': all_data, 'total': len(all_data)},
+                    'response': response
+                }
+            else:
+                # Para outros tipos de requisição, fazer como antes
+                response = requests.request(method, url, **kwargs)
+                return {
+                    'success': True,
+                    'status_code': response.status_code,
+                    'data': response.json() if response.content else None,
+                    'response': response
+                }
         except Exception as e:
             return {
                 'success': False,
@@ -103,7 +161,7 @@ class Gcap:
 
     # Métodos para cada endpoint da API
 
-    def listar_mandados(self, page=0, page_size=10, **filters):
+    def listar_mandados(self, page=0, page_size=100, **filters):
         """
         Lista mandados
         """
@@ -123,7 +181,7 @@ class Gcap:
         """
         return self._make_request('PATCH', f'/functions/v1/mandados/{mandado_id}', json=data)
 
-    def listar_passageiros(self, page=0, page_size=10, **filters):
+    def listar_passageiros(self, page=0, page_size=100, **filters):
         """
         Lista passageiros
         """
@@ -137,7 +195,7 @@ class Gcap:
             
         return self._make_request('GET', '/functions/v1/passageiros', params=params)
 
-    def listar_procurados(self, page=0, page_size=10, **filters):
+    def listar_procurados(self, page=0, page_size=100, **filters):
         """
         Lista procurados
         """
@@ -151,7 +209,7 @@ class Gcap:
             
         return self._make_request('GET', '/functions/v1/procurados', params=params)
 
-    def listar_contatos(self, page=0, page_size=10, **filters):
+    def listar_contatos(self, page=0, page_size=100, **filters):
         """
         Lista contatos
         """
@@ -165,7 +223,7 @@ class Gcap:
             
         return self._make_request('GET', '/functions/v1/contatos', params=params)
 
-    def listar_servicos(self, page=0, page_size=10, **filters):
+    def listar_servicos(self, page=0, page_size=100, **filters):
         """
         Lista serviços
         """
@@ -179,7 +237,7 @@ class Gcap:
             
         return self._make_request('GET', '/functions/v1/servicos', params=params)
 
-    def listar_instituicoes(self, page=0, page_size=10, **filters):
+    def listar_instituicoes(self, page=0, page_size=100, **filters):
         """
         Lista instituições
         """
@@ -393,6 +451,6 @@ class Gcap:
 # login_result = gcap.login()
 # if login_result['success']:
 #     # Utilizar métodos da API
-#     results = gcap.listar_mandados(page=0, page_size=10)
+#     results = gcap.listar_mandados(page=0, page_size=100)
 # else:
 #     print("Falha no login:", login_result)

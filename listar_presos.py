@@ -28,8 +28,6 @@ def listar_presos(data_prisao):
         
         # Pesquisar mandados com a data de prisão no intervalo especificado
         result = gcap.listar_mandados(
-            page=0,
-            page_size=100,
             data_prisao_from=data_prisao,
             data_prisao_to=data_prisao
         )
@@ -42,8 +40,8 @@ def listar_presos(data_prisao):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Uso: python listar-presos.py <data_prisao>")
-        print("Exemplo: python listar-presos.py 2026-03-09")
+        print("Uso: python listar_presos.py <data_prisao>")
+        print("Exemplo: python listar_presos.py 2026-03-09")
         sys.exit(1)
     
     data_prisao = sys.argv[1]

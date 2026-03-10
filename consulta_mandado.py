@@ -69,10 +69,10 @@ def consulta_mandado(numero_mandado):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Uso: python consulta-mandado.py <numero_mandado>")
+        print("Uso: python consulta_mandado.py <numero_mandado>")
         print("Exemplos:")
-        print("  - Formatado: python consulta-mandado.py 0841162-22.2025.8.23.0010.01.0001-17")
-        print("  - Somente números: python consulta-mandado.py 0841162222025823001001000117")
+        print("  - Formatado: python consulta_mandado.py 0841162-22.2025.8.23.0010.01.0001-17")
+        print("  - Somente números: python consulta_mandado.py 0841162222025823001001000117")
         sys.exit(1)
     
     numero_mandado = sys.argv[1]
