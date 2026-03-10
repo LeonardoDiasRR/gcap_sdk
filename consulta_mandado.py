@@ -32,16 +32,15 @@ def normalizar_numero_mandado(numero_mandado):
     
     return True, numero_normalizado
 
-def atualiza_data_prisao(numero_mandado, data_prisao):
+def consulta_mandado(numero_mandado):
     """
-    Atualiza a data de prisão de um mandado específico.
+    Consulta um mandado específico pelo número.
     
     Args:
-        numero_mandado (str): Número do mandado (normalizado)
-        data_prisao (str): Data de prisão no formato ISO (YYYY-MM-DD)
+        numero_mandado (str): Número do mandado
     
     Returns:
-        dict: JSON com os resultados da atualização
+        dict: JSON com os resultados da busca
     """
     # Instanciar a classe Gcap
     gcap = Gcap()
@@ -55,61 +54,28 @@ def atualiza_data_prisao(numero_mandado, data_prisao):
                 'error': f"Erro ao fazer login: {login_result['error']}"
             }
         
-        # Buscar o mandado pelo número para obter o ID
-        busca_result = gcap.listar_mandados(
+        # Pesquisar o mandado pelo número
+        result = gcap.listar_mandados(
             page=0,
             page_size=1,
             numero_mandado=numero_mandado
         )
         
-        if not busca_result['success']:
-            return {
-                'success': False,
-                'error': f"Erro ao buscar mandado: {busca_result.get('error', 'Erro desconhecido')}"
-            }
-        
-        # Verificar se encontrou o mandado
-        data = busca_result.get('data', {})
-        mandados = data.get('data', [])
-        
-        if not mandados:
-            return {
-                'success': False,
-                'error': f"Mandado com número {numero_mandado} não encontrado"
-            }
-        
-        # Obter o ID do mandado
-        mandado = mandados[0]
-        mandado_id = mandado.get('id')
-        
-        if not mandado_id:
-            return {
-                'success': False,
-                'error': "ID do mandado não encontrado na resposta"
-            }
-        
-        # Atualizar a data de prisão
-        update_result = gcap.atualizar_mandado(
-            mandado_id,
-            data_prisao=data_prisao
-        )
-        
-        return update_result
+        return result
         
     finally:
         # Fazer logout
         gcap.logout()
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print("Uso: python atualiza-data-prisao.py <numero_mandado> <data_prisao>")
+    if len(sys.argv) < 2:
+        print("Uso: python consulta-mandado.py <numero_mandado>")
         print("Exemplos:")
-        print("  - python atualiza-data-prisao.py 0841162-22.2025.8.23.0010.01.0001-17 2026-03-10")
-        print("  - python atualiza-data-prisao.py 0841162222025823001001000117 2026-03-10")
+        print("  - Formatado: python consulta-mandado.py 0841162-22.2025.8.23.0010.01.0001-17")
+        print("  - Somente números: python consulta-mandado.py 0841162222025823001001000117")
         sys.exit(1)
     
     numero_mandado = sys.argv[1]
-    data_prisao = sys.argv[2]
     
     # Normalizar e validar o número do mandado
     valido, numero_ou_erro = normalizar_numero_mandado(numero_mandado)
@@ -120,7 +86,7 @@ if __name__ == '__main__':
         }, indent=2))
         sys.exit(1)
     
-    result = atualiza_data_prisao(numero_ou_erro, data_prisao)
+    result = consulta_mandado(numero_ou_erro)
     
     # Remover objeto Response que não é serializável em JSON
     if 'response' in result:

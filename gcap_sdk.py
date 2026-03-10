@@ -208,14 +208,144 @@ class Gcap:
                 'unidade_id': self.unidade_id
             }
             
+            # Criar headers sem Content-Type para deixar requests
+            # definir automaticamente multipart/form-data
+            upload_headers = {
+                'Apikey': self.headers.get('Apikey'),
+            }
+            if 'Authorization' in self.headers:
+                upload_headers['Authorization'] = self.headers['Authorization']
+            
             response = requests.post(
                 url,
-                headers=self.headers,
+                headers=upload_headers,
                 data=data,
                 files=files
             )
             
             files['files'].close()
+            
+            return {
+                'success': True,
+                'status_code': response.status_code,
+                'data': response.json() if response.content else None,
+                'response': response
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def upload_mandados(self, file_paths):
+        """
+        Faz upload em lote de mandados (múltiplos arquivos PDF)
+        
+        Args:
+            file_paths (str ou list): Caminho do arquivo ou lista de caminhos
+        """
+        try:
+            url = f"{self.base_url}/functions/v1/bulk-upload-mandados"
+            
+            # Converter string para lista se necessário
+            if isinstance(file_paths, str):
+                file_paths = [file_paths]
+            
+            # Criar lista de tuplas com content-type explícito
+            # Formato: ('field_name', (filename, file_object, content_type))
+            files = []
+            file_objects = []
+            
+            for file_path in file_paths:
+                file_obj = open(file_path, 'rb')
+                file_objects.append(file_obj)
+                filename = file_path.split('\\')[-1] if '\\' in file_path else file_path.split('/')[-1]
+                files.append(('files', (filename, file_obj, 'application/pdf')))
+            
+            data = {
+                'unidade_id': self.unidade_id
+            }
+            
+            # Criar headers sem Content-Type para deixar requests
+            # definir automaticamente multipart/form-data
+            upload_headers = {
+                'Apikey': self.headers.get('Apikey'),
+            }
+            if 'Authorization' in self.headers:
+                upload_headers['Authorization'] = self.headers['Authorization']
+            
+            response = requests.post(
+                url,
+                headers=upload_headers,
+                data=data,
+                files=files
+            )
+            
+            # Fechar todos os arquivos abertos
+            for file_obj in file_objects:
+                file_obj.close()
+            
+            return {
+                'success': True,
+                'status_code': response.status_code,
+                'data': response.json() if response.content else None,
+                'response': response
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def upload_certidoes(self, file_paths, servico_id):
+        """
+        Faz upload em lote de certidões (múltiplos arquivos PDF)
+        
+        Args:
+            file_paths (str ou list): Caminho do arquivo ou lista de caminhos
+            servico_id (str): ID do serviço
+        """
+        try:
+            url = f"{self.base_url}/functions/v1/bulk-upload-certidoes"
+            
+            # Converter string para lista se necessário
+            if isinstance(file_paths, str):
+                file_paths = [file_paths]
+            
+            # Criar lista de tuplas com content-type explícito
+            # Formato: ('field_name', (filename, file_object, content_type))
+            files = []
+            file_objects = []
+            
+            for file_path in file_paths:
+                file_obj = open(file_path, 'rb')
+                file_objects.append(file_obj)
+                filename = file_path.split('\\')[-1] if '\\' in file_path else file_path.split('/')[-1]
+                files.append(('files', (filename, file_obj, 'application/pdf')))
+            
+            data = {
+                'unidade_id': self.unidade_id,
+                'servico_id': servico_id
+            }
+            
+            # Criar headers sem Content-Type para deixar requests
+            # definir automaticamente multipart/form-data
+            upload_headers = {
+                'Apikey': self.headers.get('Apikey'),
+            }
+            if 'Authorization' in self.headers:
+                upload_headers['Authorization'] = self.headers['Authorization']
+            
+            response = requests.post(
+                url,
+                headers=upload_headers,
+                data=data,
+                files=files
+            )
+            
+            # Fechar todos os arquivos abertos
+            for file_obj in file_objects:
+                file_obj.close()
             
             return {
                 'success': True,
