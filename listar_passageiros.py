@@ -2,54 +2,112 @@
 
 import sys
 import json
+import calendar
 from datetime import datetime, timedelta, timezone
 from gcap_sdk import Gcap
 
-def formatar_data_zona_horaria(data_str):
+def parse_date_input(date_str):
     """
-    Recebe uma data no formato ISO (YYYY-MM-DD) e retorna as datas
+    Analisa a entrada de data e retorna data_from e data_to.
+    
+    Args:
+        date_str (str): Data no formato YYYY-MM-DD (data exata) ou YYYY-MM (mês)
+    
+    Returns:
+        tuple: (data_from, data_to) no formato YYYY-MM-DD
+    """
+    if len(date_str) == 7:  # Formato YYYY-MM (mês)
+        year, month = map(int, date_str.split('-'))
+        last_day = calendar.monthrange(year, month)[1]
+        data_from = f"{year:04d}-{month:02d}-01"
+        data_to = f"{year:04d}-{month:02d}-{last_day:02d}"
+        return data_from, data_to
+    else:  # Formato YYYY-MM-DD (data exata)
+        return date_str, date_str
+
+def validate_status(status_str):
+    """
+    Valida e normaliza o valor de status.
+    
+    Args:
+        status_str (str): Status fornecido pelo usuário
+    
+    Returns:
+        tuple: (is_valid, normalized_status, error_message)
+    """
+    if not status_str:
+        return False, None, "Status não pode estar vazio"
+    
+    # Valores aceitos (case-insensitive)
+    valid_statuses = {
+        'pendente': 'Pendente',
+        'em atendimento': 'Em Atendimento',
+        'finalizado': 'Finalizado'
+    }
+    
+    status_lower = status_str.lower().strip()
+    
+    if status_lower in valid_statuses:
+        return True, valid_statuses[status_lower], None
+    
+    valid_values = ', '.join([f'"{v}"' for v in valid_statuses.keys()])
+    error_msg = f'Status inválido: "{status_str}". Valores aceitos: {valid_values}'
+    return False, None, error_msg
+
+def formatar_data_zona_horaria(data_from_str, data_to_str):
+    """
+    Recebe datas no formato ISO (YYYY-MM-DD) e retorna as datas
     com timezone, adicionando 3 horas.
     
     Args:
-        data_str (str): Data no formato ISO (ex: '2026-03-10')
+        data_from_str (str): Data inicial no formato ISO (ex: '2026-03-10')
+        data_to_str (str): Data final no formato ISO (ex: '2026-03-31')
     
     Returns:
         tuple: (data_from, data_to) formatadas como strings ISO com 3 horas adicionadas
                data_from = 2026-03-10T03:00:00.000000
-               data_to = 2026-03-11T02:59:59.999999
+               data_to = 2026-03-31T02:59:59.999999
     """
     try:
-        # Parse da data recebida
-        data = datetime.fromisoformat(data_str).replace(tzinfo=timezone.utc)
+        # Parse da data inicial
+        data_from = datetime.fromisoformat(data_from_str).replace(tzinfo=timezone.utc)
         
-        # Adicionar 3 horas
-        data_from = data + timedelta(hours=3)
+        # Parse da data final
+        data_to = datetime.fromisoformat(data_to_str).replace(tzinfo=timezone.utc)
         
-        # data_to é o próximo dia + 3 horas - 1 microsegundo
-        data_to = (data + timedelta(days=1) + timedelta(hours=3)) - timedelta(microseconds=1)
+        # Adicionar 3 horas na data inicial
+        data_from_adjusted = data_from + timedelta(hours=3)
+        
+        # data_to é o dia final + 3 horas - 1 microsegundo
+        data_to_adjusted = (data_to + timedelta(days=1) + timedelta(hours=3)) - timedelta(microseconds=1)
         
         # Formatar como strings ISO com o padrão correto
-        data_from_str = f"{data_from.strftime('%Y-%m-%dT%H:%M:%S')}.000000"
-        data_to_str = f"{data_to.strftime('%Y-%m-%dT%H:%M:%S')}.999999"
+        data_from_formatted = f"{data_from_adjusted.strftime('%Y-%m-%dT%H:%M:%S')}.000000"
+        data_to_formatted = f"{data_to_adjusted.strftime('%Y-%m-%dT%H:%M:%S')}.999999"
         
-        return data_from_str, data_to_str
+        return data_from_formatted, data_to_formatted
     
     except ValueError as e:
         return None, f"Erro ao fazer parse da data: {str(e)}"
 
-def listar_passageiros(data_embarque, preso=False):
+def listar_passageiros(data_embarque, preso=False, status=None):
     """
     Lista passageiros com datas de embarque dentro do período especificado.
     
     Args:
-        data_embarque (str): Data no formato ISO (YYYY-MM-DD)
+        data_embarque (str): Data no formato ISO (YYYY-MM-DD) para data exata,
+                            ou YYYY-MM para buscar todo um mês
         preso (bool): Se True, filtra apenas passageiros presos. Padrão: False
+        status (str): Status do passageiro (Pendente, Em Atendimento, Finalizado). Padrão: None
     
     Returns:
         dict: JSON com os resultados da busca
     """
-    # Formatar as datas
-    data_from, data_to = formatar_data_zona_horaria(data_embarque)
+    # Fazer parse da data de entrada
+    data_from_str, data_to_str = parse_date_input(data_embarque)
+    
+    # Formatar as datas com timezone
+    data_from, data_to = formatar_data_zona_horaria(data_from_str, data_to_str)
     
     if data_from is None:
         return {
@@ -82,6 +140,10 @@ def listar_passageiros(data_embarque, preso=False):
         # Adicionar filtro de preso se informado
         if preso:
             filtros['preso'] = True
+        
+        # Adicionar filtro de status se informado
+        if status:
+            filtros['status'] = status
         
         resultado = gcap.listar_passageiros(**filtros)
         
@@ -131,15 +193,38 @@ def main():
     Função principal que processa argumentos de linha de comando.
     """
     if len(sys.argv) < 2:
-        print("Uso: python listar_passageiros.py <data> [--preso]")
-        print("Exemplo: python listar_passageiros.py 2026-03-10")
-        print("Exemplo com filtro de preso: python listar_passageiros.py 2026-03-10 --preso")
+        print("Uso: python listar_passageiros.py <data> [--preso] [--status=<status>]")
+        print("Exemplos:")
+        print("  python listar_passageiros.py 2026-03-10        (data exata)")
+        print("  python listar_passageiros.py 2026-03           (mês inteiro)")
+        print("  python listar_passageiros.py 2026-03-10 --preso")
+        print("  python listar_passageiros.py 2026-03-10 --status='Pendente'")
+        print("  python listar_passageiros.py 2026-03-10 --preso --status='Em Atendimento'")
+        print("\nValores de status aceitos: 'Pendente', 'Em Atendimento', 'Finalizado'")
         sys.exit(1)
     
     data_embarque = sys.argv[1]
     preso = '--preso' in sys.argv
     
-    resultado = listar_passageiros(data_embarque, preso=preso)
+    # Parsear parâmetro --status
+    status = None
+    for arg in sys.argv[2:]:
+        if arg.startswith('--status='):
+            status = arg.replace('--status=', '').strip()
+            # Remove aspas se presentes
+            if (status.startswith('"') and status.endswith('"')) or (status.startswith("'") and status.endswith("'")):
+                status = status[1:-1]
+            break
+    
+    # Validar status se fornecido
+    if status:
+        is_valid, normalized_status, error_msg = validate_status(status)
+        if not is_valid:
+            print(f"❌ Erro: {error_msg}", file=sys.stderr)
+            sys.exit(1)
+        status = normalized_status
+    
+    resultado = listar_passageiros(data_embarque, preso=preso, status=status)
     
     if not resultado['success']:
         print(f"❌ Erro: {resultado['error']}", file=sys.stderr)
