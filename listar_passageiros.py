@@ -6,6 +6,29 @@ import calendar
 from datetime import datetime, timedelta, timezone
 from gcap_sdk import Gcap
 
+def normalize_cpf(cpf_str):
+    """
+    Normaliza o CPF removendo pontuação.
+    
+    Args:
+        cpf_str (str): CPF no formato com ou sem pontuação
+                      (ex: "016.660.164-03" ou "01666016403")
+    
+    Returns:
+        tuple: (is_valid, normalized_cpf, error_message)
+    """
+    if not cpf_str or len(cpf_str.strip()) == 0:
+        return False, None, "CPF não pode estar vazio"
+    
+    # Remove pontos e hífens
+    cpf_clean = cpf_str.strip().replace('.', '').replace('-', '')
+    
+    # Valida se contém apenas dígitos e tem 11 caracteres
+    if not cpf_clean.isdigit() or len(cpf_clean) != 11:
+        return False, None, f'CPF inválido: "{cpf_str}". Deve conter 11 dígitos'
+    
+    return True, cpf_clean, None
+
 def parse_date_input(date_str):
     """
     Analisa a entrada de data e retorna data_from e data_to.
@@ -90,20 +113,90 @@ def formatar_data_zona_horaria(data_from_str, data_to_str):
     except ValueError as e:
         return None, f"Erro ao fazer parse da data: {str(e)}"
 
-def listar_passageiros(data_embarque, preso=False, status=None):
+def listar_passageiros(data_embarque=None, preso=False, status=None, cpf=None):
     """
-    Lista passageiros com datas de embarque dentro do período especificado.
+    Lista passageiros com datas de embarque dentro do período especificado,
+    ou busca por CPF específico.
     
     Args:
         data_embarque (str): Data no formato ISO (YYYY-MM-DD) para data exata,
-                            ou YYYY-MM para buscar todo um mês
+                            ou YYYY-MM para buscar todo um mês. Opcional se cpf for informado.
         preso (bool): Se True, filtra apenas passageiros presos. Padrão: False
         status (str): Status do passageiro (Pendente, Em Atendimento, Finalizado). Padrão: None
+        cpf (str): CPF do passageiro (com ou sem formatação). Se informado, data_embarque é ignorado. Padrão: None
     
     Returns:
         dict: JSON com os resultados da busca
     """
+    # Se CPF for informado, buscar por CPF
+    if cpf:
+        # Instanciar a classe Gcap
+        gcap = Gcap()
+        
+        try:
+            # Fazer login
+            login_result = gcap.login()
+            
+            if not login_result['success']:
+                return {
+                    'success': False,
+                    'error': f'Falha no login: {login_result["error"]}'
+                }
+            
+            print(f"✅ Login realizado com sucesso!")
+            print(f"🔍 Pesquisando passageiro com CPF: {cpf}")
+            
+            # Buscar passageiro por CPF
+            resultado = gcap.listar_passageiros(cpf=cpf)
+            
+            # Fazer logout
+            gcap.logout()
+            
+            if resultado['success']:
+                resposta_json = resultado['data']
+                
+                # Filtrar por data_prisao se preso=True
+                if preso:
+                    passageiros = resposta_json.get('data', [])
+                    passageiros_presos = [
+                        p for p in passageiros 
+                        if p.get('mandados') and p['mandados'].get('data_prisao') is not None
+                    ]
+                    resposta_json['data'] = passageiros_presos
+                
+                total_passageiros = len(resposta_json.get('data', []))
+                print(f"✅ Encontrados {total_passageiros} passageiro(s)")
+                
+                # Exibir resultados formatados
+                print("\n" + "="*80)
+                print("RESULTADO DA BUSCA")
+                print("="*80)
+                print(json.dumps(resposta_json, indent=2, ensure_ascii=False))
+                
+                return {
+                    'success': True,
+                    'data': resposta_json,
+                    'total': total_passageiros
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': f'Erro ao listar passageiros: {resultado.get("error", "Erro desconhecido")}'
+                }
+                
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Erro na busca: {str(e)}'
+            }
+    
     # Fazer parse da data de entrada
+    if not data_embarque:
+        return {
+            'success': False,
+            'error': 'Data de embarque é obrigatória quando CPF não é informado'
+        }
+    
     data_from_str, data_to_str = parse_date_input(data_embarque)
     
     # Formatar as datas com timezone
@@ -192,18 +285,39 @@ def main():
     """
     Função principal que processa argumentos de linha de comando.
     """
-    if len(sys.argv) < 2:
+    # Parsear parâmetro --cpf
+    cpf = None
+    for arg in sys.argv[1:]:
+        if arg.startswith('--cpf='):
+            cpf = arg.replace('--cpf=', '').strip()
+            break
+    
+    # Se CPF foi fornecido, data é opcional
+    if cpf:
+        # Validar CPF
+        is_valid, normalized_cpf, error_msg = normalize_cpf(cpf)
+        if not is_valid:
+            print(f"❌ Erro: {error_msg}", file=sys.stderr)
+            sys.exit(1)
+        cpf = normalized_cpf
+    elif len(sys.argv) < 2:
+        # Se CPF não foi fornecido, data é obrigatória
         print("Uso: python listar_passageiros.py <data> [--preso] [--status=<status>]")
-        print("Exemplos:")
+        print("  ou: python listar_passageiros.py --cpf=<cpf> [--preso]")
+        print("\nExemplos com data:")
         print("  python listar_passageiros.py 2026-03-10        (data exata)")
         print("  python listar_passageiros.py 2026-03           (mês inteiro)")
         print("  python listar_passageiros.py 2026-03-10 --preso")
         print("  python listar_passageiros.py 2026-03-10 --status='Pendente'")
         print("  python listar_passageiros.py 2026-03-10 --preso --status='Em Atendimento'")
+        print("\nExemplos com CPF:")
+        print("  python listar_passageiros.py --cpf=016.660.164-03")
+        print("  python listar_passageiros.py --cpf=01666016403")
+        print("  python listar_passageiros.py --cpf=016.660.164-03 --preso")
         print("\nValores de status aceitos: 'Pendente', 'Em Atendimento', 'Finalizado'")
         sys.exit(1)
     
-    data_embarque = sys.argv[1]
+    data_embarque = None if cpf else sys.argv[1]
     preso = '--preso' in sys.argv
     
     # Parsear parâmetro --status
@@ -224,7 +338,7 @@ def main():
             sys.exit(1)
         status = normalized_status
     
-    resultado = listar_passageiros(data_embarque, preso=preso, status=status)
+    resultado = listar_passageiros(data_embarque=data_embarque, preso=preso, status=status, cpf=cpf)
     
     if not resultado['success']:
         print(f"❌ Erro: {resultado['error']}", file=sys.stderr)
