@@ -181,6 +181,12 @@ class Gcap:
         """
         return self._make_request('PATCH', f'/functions/v1/mandados/{mandado_id}', json=data)
 
+    def atualizar_passageiro(self, passageiro_id, **data):
+        """
+        Atualiza um passageiro
+        """
+        return self._make_request('PATCH', f'/functions/v1/passageiros/{passageiro_id}', json=data)
+
     def listar_passageiros(self, page=0, page_size=100, **filters):
         """
         Lista passageiros
