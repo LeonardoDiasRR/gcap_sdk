@@ -15,6 +15,7 @@ PDF_MIMETYPES = [
 PDF_EXTENSIONS = ['.pdf']
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB em bytes
+MAX_FILES = 50  # Máximo de arquivos por upload
 
 def validar_arquivo(caminho_arquivo):
     """
@@ -55,12 +56,12 @@ def validar_arquivo(caminho_arquivo):
     
     return True, "OK"
 
-def upload_mandado(caminho_arquivo):
+def upload_mandados(caminhos_arquivos):
     """
-    Faz upload de um arquivo de mandado em PDF.
+    Faz upload de múltiplos arquivos de mandados em PDF.
     
     Args:
-        caminho_arquivo (str): Caminho para o arquivo PDF
+        caminhos_arquivos (list): Lista de caminhos para os arquivos PDF
     
     Returns:
         dict: JSON com os resultados do upload
@@ -77,8 +78,8 @@ def upload_mandado(caminho_arquivo):
                 'error': f"Erro ao fazer login: {login_result['error']}"
             }
         
-        # Fazer upload do arquivo
-        result = gcap.upload_mandados(caminho_arquivo)
+        # Fazer upload dos arquivos
+        result = gcap.upload_mandados(caminhos_arquivos)
         
         return result
         
@@ -88,25 +89,48 @@ def upload_mandado(caminho_arquivo):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Uso: python upload_mandado.py <arquivo>")
-        print("Exemplo: python upload_mandado.py mandado.pdf")
+        print("Uso: python upload_mandados.py <arquivo1> [arquivo2] ... [arquivo50]")
+        print("Exemplo: python upload_mandados.py mandado1.pdf mandado2.pdf")
         print("\nRequisitos:")
-        print("  - Arquivo deve ser PDF (.pdf)")
-        print("  - Tamanho máximo: 5MB")
+        print("  - Arquivos devem ser PDF (.pdf)")
+        print("  - Tamanho máximo por arquivo: 5MB")
+        print("  - Máximo de arquivos por upload: 50")
         sys.exit(1)
     
-    caminho_arquivo = sys.argv[1]
+    caminhos_arquivos = sys.argv[1:]
     
-    # Validar arquivo
-    valido, mensagem = validar_arquivo(caminho_arquivo)
-    if not valido:
+    # Verificar limite de arquivos
+    if len(caminhos_arquivos) > MAX_FILES:
         print(json.dumps({
             'success': False,
-            'error': mensagem
+            'error': f"Número de arquivos ({len(caminhos_arquivos)}) excede o limite de {MAX_FILES}"
         }, indent=2))
         sys.exit(1)
     
-    result = upload_mandado(caminho_arquivo)
+    # Validar todos os arquivos
+    arquivos_validos = []
+    erros = []
+    
+    for caminho in caminhos_arquivos:
+        valido, mensagem = validar_arquivo(caminho)
+        if valido:
+            arquivos_validos.append(caminho)
+        else:
+            erros.append({
+                'arquivo': caminho,
+                'erro': mensagem
+            })
+    
+    # Se houver erros, retornar e não fazer upload
+    if erros:
+        print(json.dumps({
+            'success': False,
+            'error': 'Alguns arquivos falharam na validação',
+            'detalhes': erros
+        }, indent=2))
+        sys.exit(1)
+    
+    result = upload_mandados(arquivos_validos)
     
     # Remover objeto Response que não é serializável em JSON
     if 'response' in result:

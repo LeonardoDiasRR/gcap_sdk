@@ -18,6 +18,7 @@ EXCEL_MIMETYPES = [
 EXCEL_EXTENSIONS = ['.xls', '.xlsx', '.xlsm', '.xltm', '.xlt']
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB em bytes
+MAX_FILES = 50  # Máximo de arquivos por upload
 
 def validar_arquivo(caminho_arquivo):
     """
@@ -58,12 +59,12 @@ def validar_arquivo(caminho_arquivo):
     
     return True, "OK"
 
-def upload_lista_passageiros(caminho_arquivo):
+def upload_listas_passageiros(caminhos_arquivos):
     """
-    Faz upload de um arquivo de lista de passageiros.
+    Faz upload de múltiplos arquivos de listas de passageiros.
     
     Args:
-        caminho_arquivo (str): Caminho para o arquivo Excel
+        caminhos_arquivos (list): Lista de caminhos para os arquivos Excel
     
     Returns:
         dict: JSON com os resultados do upload
@@ -80,8 +81,8 @@ def upload_lista_passageiros(caminho_arquivo):
                 'error': f"Erro ao fazer login: {login_result['error']}"
             }
         
-        # Fazer upload do arquivo
-        result = gcap.upload_passageiros(caminho_arquivo)
+        # Fazer upload dos arquivos
+        result = gcap.upload_passageiros(caminhos_arquivos)
         
         return result
         
@@ -91,25 +92,48 @@ def upload_lista_passageiros(caminho_arquivo):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Uso: python upload_lista_passageiros.py <arquivo>")
-        print("Exemplo: python upload_lista_passageiros.py passageiros.xlsx")
+        print("Uso: python upload_listas_passageiros.py <arquivo1> [arquivo2] ... [arquivo50]")
+        print("Exemplo: python upload_listas_passageiros.py passageiros1.xlsx passageiros2.xlsx")
         print("\nRequisitos:")
-        print("  - Arquivo deve ser Excel (.xls, .xlsx, .xlsm, .xltm)")
-        print("  - Tamanho máximo: 5MB")
+        print("  - Arquivos devem ser Excel (.xls, .xlsx, .xlsm, .xltm)")
+        print("  - Tamanho máximo por arquivo: 5MB")
+        print("  - Máximo de arquivos por upload: 50")
         sys.exit(1)
     
-    caminho_arquivo = sys.argv[1]
+    caminhos_arquivos = sys.argv[1:]
     
-    # Validar arquivo
-    valido, mensagem = validar_arquivo(caminho_arquivo)
-    if not valido:
+    # Verificar limite de arquivos
+    if len(caminhos_arquivos) > MAX_FILES:
         print(json.dumps({
             'success': False,
-            'error': mensagem
+            'error': f"Número de arquivos ({len(caminhos_arquivos)}) excede o limite de {MAX_FILES}"
         }, indent=2))
         sys.exit(1)
     
-    result = upload_lista_passageiros(caminho_arquivo)
+    # Validar todos os arquivos
+    arquivos_validos = []
+    erros = []
+    
+    for caminho in caminhos_arquivos:
+        valido, mensagem = validar_arquivo(caminho)
+        if valido:
+            arquivos_validos.append(caminho)
+        else:
+            erros.append({
+                'arquivo': caminho,
+                'erro': mensagem
+            })
+    
+    # Se houver erros, retornar e não fazer upload
+    if erros:
+        print(json.dumps({
+            'success': False,
+            'error': 'Alguns arquivos falharam na validação',
+            'detalhes': erros
+        }, indent=2))
+        sys.exit(1)
+    
+    result = upload_listas_passageiros(arquivos_validos)
     
     # Remover objeto Response que não é serializável em JSON
     if 'response' in result:

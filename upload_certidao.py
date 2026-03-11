@@ -16,6 +16,7 @@ PDF_MIMETYPES = [
 PDF_EXTENSIONS = ['.pdf']
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB em bytes
+MAX_FILES = 50  # Máximo de arquivos por upload
 
 def validar_arquivo(caminho_arquivo):
     """
@@ -56,12 +57,12 @@ def validar_arquivo(caminho_arquivo):
     
     return True, "OK"
 
-def upload_certidao(caminho_arquivo, nome_servico):
+def upload_certidoes(caminhos_arquivos, nome_servico):
     """
-    Faz upload de um arquivo de certidão em PDF.
+    Faz upload de múltiplos arquivos de certidões em PDF.
     
     Args:
-        caminho_arquivo (str): Caminho para o arquivo PDF
+        caminhos_arquivos (list): Lista de caminhos para os arquivos PDF
         nome_servico (str): Nome do serviço
     
     Returns:
@@ -108,8 +109,8 @@ def upload_certidao(caminho_arquivo, nome_servico):
                 'error': "ID do serviço não encontrado na resposta"
             }
         
-        # Fazer upload da certidão
-        upload_result = gcap.upload_certidoes(caminho_arquivo, servico_id)
+        # Fazer upload das certidões
+        upload_result = gcap.upload_certidoes(caminhos_arquivos, servico_id)
         
         return upload_result
         
@@ -119,7 +120,7 @@ def upload_certidao(caminho_arquivo, nome_servico):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Faz upload de certidão em PDF para um serviço específico'
+        description='Faz upload de certidões em PDF para um serviço específico'
     )
     parser.add_argument(
         '--servico',
@@ -127,25 +128,48 @@ if __name__ == '__main__':
         help='Nome do serviço'
     )
     parser.add_argument(
-        'arquivo',
-        help='Caminho para o arquivo PDF da certidão'
+        'arquivos',
+        nargs='+',
+        help='Caminhos para os arquivos PDF das certidões (até 50 arquivos)'
     )
     
     args = parser.parse_args()
     
-    caminho_arquivo = args.arquivo
+    caminhos_arquivos = args.arquivos
     nome_servico = args.servico
     
-    # Validar arquivo
-    valido, mensagem = validar_arquivo(caminho_arquivo)
-    if not valido:
+    # Verificar limite de arquivos
+    if len(caminhos_arquivos) > MAX_FILES:
         print(json.dumps({
             'success': False,
-            'error': mensagem
+            'error': f"Número de arquivos ({len(caminhos_arquivos)}) excede o limite de {MAX_FILES}"
         }, indent=2))
         sys.exit(1)
     
-    result = upload_certidao(caminho_arquivo, nome_servico)
+    # Validar todos os arquivos
+    arquivos_validos = []
+    erros = []
+    
+    for caminho in caminhos_arquivos:
+        valido, mensagem = validar_arquivo(caminho)
+        if valido:
+            arquivos_validos.append(caminho)
+        else:
+            erros.append({
+                'arquivo': caminho,
+                'erro': mensagem
+            })
+    
+    # Se houver erros, retornar e não fazer upload
+    if erros:
+        print(json.dumps({
+            'success': False,
+            'error': 'Alguns arquivos falharam na validação',
+            'detalhes': erros
+        }, indent=2))
+        sys.exit(1)
+    
+    result = upload_certidoes(arquivos_validos, nome_servico)
     
     # Remover objeto Response que não é serializável em JSON
     if 'response' in result:
