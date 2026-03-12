@@ -185,7 +185,11 @@ class Gcap:
         """
         Atualiza um passageiro
         """
+        print("JSON", data)  #  Debug: Verificar o JSON enviado para a API
+
         return self._make_request('PATCH', f'/functions/v1/passageiros/{passageiro_id}', json=data)
+    
+
 
     def listar_passageiros(self, page=0, page_size=100, **filters):
         """
