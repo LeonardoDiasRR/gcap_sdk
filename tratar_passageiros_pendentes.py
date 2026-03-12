@@ -253,6 +253,9 @@ def exibir_relatorio(relatorio: dict):
 
 def main():
     """Função principal que orquestra o fluxo."""
+    # Configurar stdout para UTF-8 (Windows compatibility)
+    sys.stdout.reconfigure(encoding='utf-8')
+    
     print("\n" + "="*70)
     print("TRATADOR DE PASSAGEIROS PENDENTES")
     print("="*70)
