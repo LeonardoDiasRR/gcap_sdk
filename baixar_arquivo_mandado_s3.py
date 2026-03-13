@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Script para baixar arquivo PDF de Mandado de Prisão do storage S3.
+Script para baixar arquivo PDF de Mandado de Prisão ou Certidão do Supabase Storage via REST API.
 Recebe como parâmetro um número de mandado de prisão, pesquisa os dados 
-do mandado utilizando gcap_sdk e faz download do arquivo PDF.
+do mandado utilizando gcap_sdk e faz download do arquivo de mandado ou certidão com autenticação Bearer.
+Use a flag --certidao para baixar a certidão em vez do mandado.
 """
 
 import sys
@@ -19,13 +20,6 @@ except ImportError:
     print("Erro: requests não está instalado. Execute: pip install requests")
     sys.exit(1)
 
-try:
-    import boto3
-    from botocore.exceptions import ClientError
-    HAS_BOTO3 = True
-except ImportError:
-    HAS_BOTO3 = False
-
 from dotenv import load_dotenv
 from gcap_sdk import Gcap
 
@@ -33,67 +27,29 @@ from gcap_sdk import Gcap
 load_dotenv()
 
 
-def obter_credenciais_s3():
+def _baixar_com_rest_autenticado(url_arquivo, access_token, api_key):
     """
-    Obtém credenciais de S3 e URL base do .env.
-    
-    Returns:
-        dict: Dicionário com configurações S3 (pode ter chaves vazias)
-    """
-    return {
-        's3_url': os.getenv('S3_URL', ''),
-        's3_access_key': os.getenv('S3_ACCESS_KEY', ''),
-        's3_secret_key': os.getenv('S3_SECRET_KEY', ''),
-        's3_region': os.getenv('S3_REGION', 'sa-east-1'),
-        's3_bucket_name': os.getenv('S3_BUCKET_NAME', 'default')
-    }
-
-
-def _baixar_com_boto3(url_arquivo, credenciais_s3):
-    """
-    Baixa arquivo usando boto3 com credenciais S3.
+    Baixa arquivo usando requisição REST autenticada com Supabase Storage.
     
     Args:
-        url_arquivo (str): URL ou caminho do arquivo no S3
-        credenciais_s3 (dict): Dicionário com credenciais S3
+        url_arquivo (str): URL do arquivo no Supabase Storage
+        access_token (str): Access token obtido através de gcap.login()
+        api_key (str): API key (Apikey) do Supabase
     
     Returns:
         bytes: Conteúdo do arquivo
+    
+    Raises:
+        requests.exceptions.RequestException: Se houver erro na requisição HTTP
     """
-    if not HAS_BOTO3:
-        raise ImportError("boto3 não está instalado")
+    headers = {
+        'Apikey': api_key,
+        'Authorization': f'Bearer {access_token}'
+    }
     
-    # Extrair chave da URL
-    # URL pode ser: https://xkecjoczmynhnyjwbxry.storage.supabase.co/storage/v1/s3/bucket/key
-    # Ou: s3://bucket/key
-    
-    if url_arquivo.startswith('s3://'):
-        # Formato s3://bucket/key
-        partes = url_arquivo[5:].split('/', 1)
-        chave = partes[1] if len(partes) > 1 else ''
-    else:
-        # Formato URL HTTP
-        url_base = credenciais_s3['s3_url'].rstrip('/')
-        if url_arquivo.startswith(url_base):
-            chave = url_arquivo[len(url_base):].lstrip('/')
-        else:
-            chave = url_arquivo
-    
-    # Usar bucket configurado no .env
-    bucket = credenciais_s3['s3_bucket_name']
-    
-    # Criar cliente S3
-    s3_client = boto3.client(
-        's3',
-        endpoint_url=credenciais_s3['s3_url'].rsplit('/storage/v1/s3', 1)[0] if '/storage/v1/s3' in credenciais_s3['s3_url'] else None,
-        aws_access_key_id=credenciais_s3['s3_access_key'],
-        aws_secret_access_key=credenciais_s3['s3_secret_key'],
-        region_name=credenciais_s3['s3_region']
-    )
-    
-    # Fazer download
-    response = s3_client.get_object(Bucket=bucket, Key=chave)
-    return response['Body'].read()
+    response = requests.get(url_arquivo, headers=headers, timeout=30)
+    response.raise_for_status()
+    return response.content
 
 
 def normalizar_numero_mandado(numero_mandado):
@@ -136,37 +92,33 @@ def assegurar_diretorio_saida():
     return diretorio_saida
 
 
-def gerar_nome_arquivo(numero_mandado, url_arquivo):
+def gerar_nome_arquivo(numero_mandado, url_arquivo, eh_certidao=False):
     """
-    Gera um nome para o arquivo com base no número do mandado e a URL.
+    Gera o nome do arquivo com padrão consistente.
+    Para certidão: retorna 'certidao_<numero_mandado>.pdf'
+    Para mandado: retorna 'mandado_<numero_mandado>.pdf'
     
     Args:
         numero_mandado (str): Número do mandado normalizado
-        url_arquivo (str): URL do arquivo no S3
+        url_arquivo (str): URL do arquivo no Supabase Storage
+        eh_certidao (bool): Se True, gera nome para certidão; se False, gera para mandado
     
     Returns:
         str: Nome do arquivo com extensão
     """
-    # Extrair extensão da URL se houver
-    extensao = '.pdf'
-    if '.' in url_arquivo.split('/')[-1]:
-        nome_url = url_arquivo.split('/')[-1].split('?')[0]
-        if '.' in nome_url:
-            extensao = '.' + nome_url.split('.')[-1]
-    
-    # Criar nome formatado: mandado_<numero_normalizado>_<timestamp>
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    nome_arquivo = f"mandado_{numero_mandado}_{timestamp}{extensao}"
-    
-    return nome_arquivo
+    if eh_certidao:
+        return f"certidao_{numero_mandado}.pdf"
+    else:
+        return f"mandado_{numero_mandado}.pdf"
 
 
-def baixar_arquivo_mandado(numero_mandado):
+def baixar_arquivo_mandado(numero_mandado, eh_certidao=False):
     """
-    Baixa arquivo PDF de Mandado de Prisão do S3.
+    Baixa arquivo PDF de Mandado de Prisão ou Certidão do Supabase Storage via REST API.
     
     Args:
         numero_mandado (str): Número do mandado normalizado
+        eh_certidao (bool): Se True, baixa a certidão; se False, baixa o mandado
     
     Returns:
         dict: JSON com os resultados da operação
@@ -206,47 +158,45 @@ def baixar_arquivo_mandado(numero_mandado):
         
         mandado = mandados[0]
         
-        # Verificar se há arquivo_mandado
-        caminho_arquivo = mandado.get('arquivo_mandado')
+        # Verificar se há arquivo (mandado ou certidão)
+        nome_campo = 'arquivo_certidao' if eh_certidao else 'arquivo_mandado'
+        tipo_arquivo = 'certidão' if eh_certidao else 'mandado'
+        caminho_arquivo = mandado.get(nome_campo)
         if not caminho_arquivo:
             return {
                 'success': False,
-                'error': "O mandado não possui arquivo (campo 'arquivo_mandado' vazio)"
+                'error': f"O mandado não possui arquivo de {tipo_arquivo} (campo '{nome_campo}' vazio)"
             }
         
         # Construir URL completa se necessário
         if caminho_arquivo.startswith('http://') or caminho_arquivo.startswith('https://'):
             url_arquivo = caminho_arquivo
         else:
-            # É um caminho relativo, construir URL completa
-            credenciais_s3 = obter_credenciais_s3()
-            url_arquivo = f"{credenciais_s3['s3_url']}/{credenciais_s3['s3_bucket_name']}/{caminho_arquivo}"
+            # É um caminho relativo, construir URL completa com base URL do Supabase Storage
+            base_url = os.getenv('GCAP_BACKEND_URL_BASE', 'https://xkecjoczmynhnyjwbxry.supabase.co')
+            bucket_name = os.getenv('S3_BUCKET_NAME', 'gcap')
+            url_arquivo = f"{base_url}/storage/v1/object/{bucket_name}/{caminho_arquivo}"
         
         # Fazer download do arquivo
         diretorio_saida = assegurar_diretorio_saida()
-        nome_arquivo = gerar_nome_arquivo(numero_mandado, url_arquivo)
+        nome_arquivo = gerar_nome_arquivo(numero_mandado, url_arquivo, eh_certidao=eh_certidao)
         caminho_arquivo_local = os.path.join(diretorio_saida, nome_arquivo)
         
         try:
-            # Obter credenciais S3 (se não obteve acima)
-            if 'credenciais_s3' not in locals():
-                credenciais_s3 = obter_credenciais_s3()
+            # Obter API key para autenticação
+            api_key = os.getenv('GCAP_BACKEND_API_KEY')
+            if not api_key:
+                return {
+                    'success': False,
+                    'error': "GCAP_BACKEND_API_KEY não configurada no .env"
+                }
             
-            arquivo_conteudo = None
-            
-            # Tentar baixar usando boto3 se disponível e credenciais configuradas
-            if HAS_BOTO3 and credenciais_s3['s3_access_key'] and credenciais_s3['s3_secret_key']:
-                try:
-                    arquivo_conteudo = _baixar_com_boto3(url_arquivo, credenciais_s3)
-                except Exception as e_boto3:
-                    # Se boto3 falhar, tentar com requests
-                    pass
-            
-            # Fallback para requests.get() (para presigned URLs ou URLs públicas)
-            if arquivo_conteudo is None:
-                response = requests.get(url_arquivo, timeout=30)
-                response.raise_for_status()
-                arquivo_conteudo = response.content
+            # Usar access token obtido do login para fazer download autenticado
+            arquivo_conteudo = _baixar_com_rest_autenticado(
+                url_arquivo,
+                gcap.access_token,
+                api_key
+            )
             
             # Salvar arquivo
             with open(caminho_arquivo_local, 'wb') as f:
@@ -264,7 +214,7 @@ def baixar_arquivo_mandado(numero_mandado):
         except requests.exceptions.RequestException as e:
             return {
                 'success': False,
-                'error': f"Erro ao baixar arquivo do S3: {str(e)}"
+                'error': f"Erro ao baixar arquivo: {str(e)}"
             }
         except Exception as e:
             return {
@@ -285,13 +235,15 @@ def baixar_arquivo_mandado(numero_mandado):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Uso: python baixar_arquivo_mandado.py <numero_mandado>")
+        print("Uso: python baixar_arquivo_mandado_s3.py <numero_mandado> [--certidao]")
         print("Exemplos:")
-        print("  - Formatado: python baixar_arquivo_mandado.py 0841162-22.2025.8.23.0010.01.0001-17")
-        print("  - Somente números: python baixar_arquivo_mandado.py 0841162222025823001001000117")
+        print("  - Baixar mandado (formatado): python baixar_arquivo_mandado_s3.py 0841162-22.2025.8.23.0010.01.0001-17")
+        print("  - Baixar mandado (somente números): python baixar_arquivo_mandado_s3.py 0841162222025823001001000117")
+        print("  - Baixar certidão: python baixar_arquivo_mandado_s3.py 0841162-22.2025.8.23.0010.01.0001-17 --certidao")
         sys.exit(1)
     
     numero_mandado = sys.argv[1]
+    eh_certidao = '--certidao' in sys.argv
     
     # Normalizar e validar o número do mandado
     valido, numero_ou_erro = normalizar_numero_mandado(numero_mandado)
@@ -302,7 +254,7 @@ if __name__ == '__main__':
         }, indent=2))
         sys.exit(1)
     
-    result = baixar_arquivo_mandado(numero_ou_erro)
+    result = baixar_arquivo_mandado(numero_ou_erro, eh_certidao=eh_certidao)
     
     # Remover objeto Response que não é serializável em JSON
     if 'response' in result:
