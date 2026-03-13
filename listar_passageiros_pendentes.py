@@ -40,11 +40,11 @@ def main():
     
     # Criar arquivo CSV com timestamp
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    csv_file = f'\\\\10.95.7.22\\gcap\\passageiros_pendentes\\passageiros_pendentes_{timestamp}.csv'
+    csv_file = f'\\\\10.95.7.22\\gcap\\passageiros_pendentes\\passageiros_pendentes.csv'
     
     try:
         # Colunas a serem exportadas
-        fieldnames = ['data_embarque', 'nome_passageiro', 'cpf', 'numero_mandado']
+        fieldnames = ['cpf', 'numero_mandado']
         
         # Filtrar apenas as colunas desejadas
         passageiros_filtrados = []
