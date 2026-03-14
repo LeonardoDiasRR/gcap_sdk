@@ -260,53 +260,56 @@ def main():
     print("TRATADOR DE PASSAGEIROS PENDENTES")
     print("="*70)
     
-    # ─── INICIALIZAÇÕES ───
-    
-    # Diretório de download temporário
-    download_dir = os.path.expanduser("~\\Downloads\\gcap_mandados")
-    os.makedirs(download_dir, exist_ok=True)
-    print(f"\n[*] Diretório de download: {download_dir}")
-    
-    # Inicializar GCAP SDK
-    print("\n[ETAPA 0] Inicializando sistemas...")
-    gcap = Gcap()
-    
-    print("[*] Autenticando no GCAP...")
-    login_result = gcap.login()
-    if not login_result['success']:
-        print(f"✗ Erro no login GCAP: {login_result['error']}")
-        logger.error(f"Erro no login GCAP: {login_result['error']}")
-        return
-    
-    print("✓ Autenticado no GCAP")
-    logger.info("Login GCAP realizado com sucesso")
-    
-    # ─── OBTER MANDADOS PENDENTES ───
-    
-    mandados_pendentes = obter_mandados_pendentes(gcap)
-    
-    if not mandados_pendentes:
-        print("\n⚠ Nenhum mandado para processar. Abortando.")
-        logger.info("Nenhum mandado pendente para processar")
-        return
-    
-    # ─── INICIALIZAR BNMP3 ───
-    
-    print("\n[*] Inicializando BNMP3...")
-    
-    # Obter credenciais do BNMP3 das variáveis de ambiente
-    usuario_bnmp = os.getenv('BNMP3_USUARIO')
-    senha_bnmp = os.getenv('BNMP3_SENHA')
-    
-    if not usuario_bnmp or not senha_bnmp:
-        print("✗ Credenciais BNMP3 não configuradas!")
-        print("  Configure as variáveis de ambiente:")
-        print("    - BNMP3_USUARIO")
-        print("    - BNMP3_SENHA")
-        logger.error("Credenciais BNMP3 não encontradas no .env")
-        return
+    # Inicializar driver como None para garantir cleanup em caso de erro
+    driver = None
     
     try:
+        # ─── INICIALIZAÇÕES ───
+        
+        # Diretório de download temporário
+        download_dir = os.path.expanduser("~\\Downloads\\gcap_mandados")
+        os.makedirs(download_dir, exist_ok=True)
+        print(f"\n[*] Diretório de download: {download_dir}")
+        
+        # Inicializar GCAP SDK
+        print("\n[ETAPA 0] Inicializando sistemas...")
+        gcap = Gcap()
+        
+        print("[*] Autenticando no GCAP...")
+        login_result = gcap.login()
+        if not login_result['success']:
+            print(f"✗ Erro no login GCAP: {login_result['error']}")
+            logger.error(f"Erro no login GCAP: {login_result['error']}")
+            return
+        
+        print("✓ Autenticado no GCAP")
+        logger.info("Login GCAP realizado com sucesso")
+        
+        # ─── OBTER MANDADOS PENDENTES ───
+        
+        mandados_pendentes = obter_mandados_pendentes(gcap)
+        
+        if not mandados_pendentes:
+            print("\n⚠ Nenhum mandado para processar. Abortando.")
+            logger.info("Nenhum mandado pendente para processar")
+            return
+        
+        # ─── INICIALIZAR BNMP3 ───
+        
+        print("\n[*] Inicializando BNMP3...")
+        
+        # Obter credenciais do BNMP3 das variáveis de ambiente
+        usuario_bnmp = os.getenv('BNMP3_USUARIO')
+        senha_bnmp = os.getenv('BNMP3_SENHA')
+        
+        if not usuario_bnmp or not senha_bnmp:
+            print("✗ Credenciais BNMP3 não configuradas!")
+            print("  Configure as variáveis de ambiente:")
+            print("    - BNMP3_USUARIO")
+            print("    - BNMP3_SENHA")
+            logger.error("Credenciais BNMP3 não encontradas no .env")
+            return
+        
         # Configurar Selenium WebDriver
         driver = configurar_selenium_driver(download_dir)
         
@@ -325,33 +328,33 @@ def main():
         print("✓ Autenticado no BNMP3")
         logger.info("Login BNMP3 realizado com sucesso")
         
-    except Exception as e:
-        print(f"✗ Erro ao inicializar BNMP3: {str(e)}")
-        logger.error(f"Erro ao inicializar BNMP3: {str(e)}")
-        return
-    
-    # ─── PROCESSAR MANDADOS ───
-    
-    try:
+        # ─── PROCESSAR MANDADOS ───
+        
         relatorio = processar_mandados(mandados_pendentes, bnmp3, gcap, download_dir)
+        
+        # ─── EXIBIR RELATÓRIO ───
+        
+        exibir_relatorio(relatorio)
+        
+        # Log resumido
+        logger.info(
+            f"Processamento concluído: {len(relatorio['sucesso'])} sucesso, "
+            f"{len(relatorio['erro_download'])} erro download, "
+            f"{len(relatorio['erro_upload'])} erro upload, "
+            f"{len(relatorio['erro_geral'])} erro geral"
+        )
+        
+        print("\n✓ Processamento concluído!")
+    
+    except Exception as e:
+        print(f"\n✗ Erro durante a execução: {str(e)}")
+        logger.error(f"Erro não tratado: {str(e)}", exc_info=True)
+    
     finally:
-        # Fechar o WebDriver
-        driver.quit()
-        print("\n[*] WebDriver fechado")
-    
-    # ─── EXIBIR RELATÓRIO ───
-    
-    exibir_relatorio(relatorio)
-    
-    # Log resumido
-    logger.info(
-        f"Processamento concluído: {len(relatorio['sucesso'])} sucesso, "
-        f"{len(relatorio['erro_download'])} erro download, "
-        f"{len(relatorio['erro_upload'])} erro upload, "
-        f"{len(relatorio['erro_geral'])} erro geral"
-    )
-    
-    print("\n✓ Processamento concluído!")
+        # Fechar o WebDriver se foi inicializado, mesmo em caso de erro
+        if driver is not None:
+            driver.quit()
+            print("\n[*] WebDriver fechado")
 
 
 if __name__ == '__main__':
